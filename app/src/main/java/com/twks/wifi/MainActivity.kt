@@ -22,8 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 class MainActivity : ComponentActivity() {
     private val locationPermissionRequest = registerForActivityResult(
@@ -53,7 +51,7 @@ fun TerminalApp(context: ComponentActivity) {
     var pps by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     var attackJob by remember { mutableStateOf<Job?>(null) }
-    
+
     val green = Color(0xFF00FF41)
     val dimGreen = Color(0xFF008F24)
     val red = Color(0xFFFF003C)
@@ -92,9 +90,9 @@ fun TerminalApp(context: ComponentActivity) {
             Spacer(modifier = Modifier.height(16.dp))
 
             when (screen) {
-                "MENU" -> MenuScreen(green, 
+                "MENU" -> MenuScreen(green,
                     onSelectTarget = { screen = "TARGETS" },
-                    onLaunchAttack = { 
+                    onLaunchAttack = {
                         if (!NetworkEngine.isConnectedToWifi(context)) {
                             context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
                         } else {
@@ -102,7 +100,7 @@ fun TerminalApp(context: ComponentActivity) {
                         }
                     }
                 )
-                "TARGETS" -> TargetListScreen(context, green, dimGreen, onSelected = { ip, _ ->
+                "TARGETS" -> TargetListScreen(context, green, dimGreen, red, onSelected = { ip, _ ->
                     targetIp = ip
                     screen = "MENU"
                 })
@@ -118,11 +116,11 @@ fun TerminalApp(context: ComponentActivity) {
                         NativeEngine.stopAttack()
                         attackJob?.cancel()
                     },
-                    onBack = { 
+                    onBack = {
                         isAttacking = false
                         NativeEngine.stopAttack()
                         attackJob?.cancel()
-                        screen = "MENU" 
+                        screen = "MENU"
                     }
                 )
             }
@@ -146,7 +144,7 @@ fun MenuButton(text: String, color: Color, onClick: () -> Unit) {
 }
 
 @Composable
-fun TargetListScreen(context: ComponentActivity, color: Color, dimColor: Color, onSelected: (String, String) -> Unit) {
+fun TargetListScreen(context: ComponentActivity, color: Color, dimColor: Color, red: Color, onSelected: (String, String) -> Unit) {
     var networks by remember { mutableStateOf<List<WifiNetwork>>(emptyList()) }
     LaunchedEffect(Unit) {
         networks = NetworkEngine.scanNetworks(context)
@@ -173,7 +171,7 @@ fun AttackScreen(color: Color, red: Color, dimColor: Color, ip: String, attackin
         Text("TOTAL PACKETS: $packets", color = dimColor, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
         Text("THROUGHPUT: $currentPps PPS", color = if (attacking) red else dimColor, fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         Spacer(modifier = Modifier.weight(1f))
-        
+
         if (attacking) {
             Button(onClick = onStop, colors = ButtonDefaults.buttonColors(backgroundColor = red), modifier = Modifier.fillMaxWidth()) {
                 Text("[ ABORT ATTACK ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
