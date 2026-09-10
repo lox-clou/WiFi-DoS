@@ -9,20 +9,20 @@
 9        android:targetSdkVersion="34" />
 10
 11    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-11-->C:\Users\Anton\app\src\main\AndroidManifest.xml:3:5-76
-11-->C:\Users\Anton\app\src\main\AndroidManifest.xml:3:22-73
+11-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:3:5-76
+11-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:3:22-73
 12    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-12-->C:\Users\Anton\app\src\main\AndroidManifest.xml:4:5-76
-12-->C:\Users\Anton\app\src\main\AndroidManifest.xml:4:22-73
+12-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:4:5-76
+12-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:4:22-73
 13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-13-->C:\Users\Anton\app\src\main\AndroidManifest.xml:5:5-79
-13-->C:\Users\Anton\app\src\main\AndroidManifest.xml:5:22-76
+13-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:5:5-79
+13-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:5:22-76
 14    <uses-permission android:name="android.permission.INTERNET" />
-14-->C:\Users\Anton\app\src\main\AndroidManifest.xml:6:5-67
-14-->C:\Users\Anton\app\src\main\AndroidManifest.xml:6:22-64
+14-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:6:5-67
+14-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:6:22-64
 15    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-15-->C:\Users\Anton\app\src\main\AndroidManifest.xml:7:5-79
-15-->C:\Users\Anton\app\src\main\AndroidManifest.xml:7:22-76
+15-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:7:5-79
+15-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:7:22-76
 16
 17    <permission
 17-->[androidx.core:core:1.12.0] C:\Users\Anton\.gradle\caches\transforms-3\8775ed491970576126584cf24be3fe11\transformed\core-1.12.0\AndroidManifest.xml:22:5-24:47
@@ -36,32 +36,32 @@
 21-->[androidx.core:core:1.12.0] C:\Users\Anton\.gradle\caches\transforms-3\8775ed491970576126584cf24be3fe11\transformed\core-1.12.0\AndroidManifest.xml:26:22-94
 22
 23    <application
-23-->C:\Users\Anton\app\src\main\AndroidManifest.xml:8:5-15:19
+23-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:8:5-15:19
 24        android:allowBackup="false"
-24-->C:\Users\Anton\app\src\main\AndroidManifest.xml:8:84-111
+24-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:8:84-111
 25        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
 25-->[androidx.core:core:1.12.0] C:\Users\Anton\.gradle\caches\transforms-3\8775ed491970576126584cf24be3fe11\transformed\core-1.12.0\AndroidManifest.xml:28:18-86
 26        android:debuggable="true"
 27        android:extractNativeLibs="false"
 28        android:label="VANTA_Terminal"
-28-->C:\Users\Anton\app\src\main\AndroidManifest.xml:8:18-48
+28-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:8:18-48
 29        android:theme="@style/Theme.VANTA" >
-29-->C:\Users\Anton\app\src\main\AndroidManifest.xml:8:49-83
+29-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:8:49-83
 30        <activity
-30-->C:\Users\Anton\app\src\main\AndroidManifest.xml:9:9-14:20
+30-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:9:9-14:20
 31            android:name="com.vanta.wifidos.MainActivity"
-31-->C:\Users\Anton\app\src\main\AndroidManifest.xml:9:19-47
+31-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:9:19-47
 32            android:exported="true" >
-32-->C:\Users\Anton\app\src\main\AndroidManifest.xml:9:48-71
+32-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:9:48-71
 33            <intent-filter>
-33-->C:\Users\Anton\app\src\main\AndroidManifest.xml:10:13-13:29
+33-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:10:13-13:29
 34                <action android:name="android.intent.action.MAIN" />
-34-->C:\Users\Anton\app\src\main\AndroidManifest.xml:11:17-69
-34-->C:\Users\Anton\app\src\main\AndroidManifest.xml:11:25-66
+34-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:11:17-69
+34-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:11:25-66
 35
 36                <category android:name="android.intent.category.LAUNCHER" />
-36-->C:\Users\Anton\app\src\main\AndroidManifest.xml:12:17-77
-36-->C:\Users\Anton\app\src\main\AndroidManifest.xml:12:27-74
+36-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:12:17-77
+36-->C:\Users\Anton\vanta_wifi_dos\app\src\main\AndroidManifest.xml:12:27-74
 37            </intent-filter>
 38        </activity>
 39

@@ -12,8 +12,6 @@
 #include <atomic>
 #include <cstring>
 
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "VANTA", __VA_ARGS__)
-
 std::atomic<bool> isAttacking{false};
 std::atomic<uint64_t> packetCount{0};
 
