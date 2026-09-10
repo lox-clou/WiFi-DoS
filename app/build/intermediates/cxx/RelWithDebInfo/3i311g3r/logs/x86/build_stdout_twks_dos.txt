@@ -1,3 +1,0 @@
-ninja: Entering directory `C:\Users\Anton\vanta_wifi_dos\app\.cxx\RelWithDebInfo\3i311g3r\x86'
-[1/2] Building CXX object CMakeFiles/twks_dos.dir/native-lib.cpp.o
-[2/2] Linking CXX shared library C:\Users\Anton\vanta_wifi_dos\app\build\intermediates\cxx\RelWithDebInfo\3i311g3r\obj\x86\libtwks_dos.so

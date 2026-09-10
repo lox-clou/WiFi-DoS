@@ -8,7 +8,6 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,9 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class MainActivity : ComponentActivity() {
     private val locationPermissionRequest = registerForActivityResult(
@@ -47,13 +46,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TerminalApp(context: ComponentActivity) {
     var screen by remember { mutableStateOf("MENU") }
-    var targetIp by remember { mutableStateOf(NetworkEngine.getGatewayIp(context) ?: "192.168.1.1") }
+    val gatewayIp = NetworkEngine.getGatewayIp(context) ?: "192.168.1.1"
+    var targetIp by remember { mutableStateOf(gatewayIp) }
     var isAttacking by remember { mutableStateOf(false) }
     var packetCount by remember { mutableStateOf(0L) }
     var pps by remember { mutableStateOf(0L) }
-    var lastCount by remember { mutableStateOf(0L) }
-    var lastTime by remember { mutableStateOf(System.currentTimeMillis()) }
     val scope = rememberCoroutineScope()
+    var attackJob by remember { mutableStateOf<Job?>(null) }
     
     val green = Color(0xFF00FF41)
     val dimGreen = Color(0xFF008F24)
@@ -61,20 +60,27 @@ fun TerminalApp(context: ComponentActivity) {
 
     LaunchedEffect(isAttacking) {
         if (isAttacking) {
-            while (isAttacking) {
+            var lastCount = NativeEngine.getPacketCount()
+            var lastTime = System.currentTimeMillis()
+            while (isAttacking && currentCoroutineContext().isActive) {
+                delay(500)
                 val currentCount = NativeEngine.getPacketCount()
                 val currentTime = System.currentTimeMillis()
                 val timeDiff = (currentTime - lastTime) / 1000.0
-                if (timeDiff >= 1.0) {
-                    pps = ((currentCount - lastCount) / timeDiff).toLong()
-                    lastCount = currentCount
-                    lastTime = currentTime
-                }
+                pps = if (timeDiff > 0) ((currentCount - lastCount) / timeDiff).toLong() else 0L
+                lastCount = currentCount
+                lastTime = currentTime
                 packetCount = currentCount
-                delay(100)
             }
         } else {
             pps = 0
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            attackJob?.cancel()
+            if (isAttacking) NativeEngine.stopAttack()
         }
     }
 
@@ -103,19 +109,19 @@ fun TerminalApp(context: ComponentActivity) {
                 "ATTACK" -> AttackScreen(green, red, dimGreen, targetIp, isAttacking, packetCount, pps,
                     onStart = {
                         isAttacking = true
-                        lastCount = 0
-                        lastTime = System.currentTimeMillis()
-                        scope.launch(Dispatchers.IO) {
+                        attackJob = scope.launch(Dispatchers.IO) {
                             NativeEngine.startAttack(targetIp, 64)
                         }
                     },
                     onStop = {
                         isAttacking = false
                         NativeEngine.stopAttack()
+                        attackJob?.cancel()
                     },
                     onBack = { 
                         isAttacking = false
                         NativeEngine.stopAttack()
+                        attackJob?.cancel()
                         screen = "MENU" 
                     }
                 )
@@ -141,9 +147,15 @@ fun MenuButton(text: String, color: Color, onClick: () -> Unit) {
 
 @Composable
 fun TargetListScreen(context: ComponentActivity, color: Color, dimColor: Color, onSelected: (String, String) -> Unit) {
-    val networks = remember { NetworkEngine.scanNetworks(context) }
+    var networks by remember { mutableStateOf<List<WifiNetwork>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        networks = NetworkEngine.scanNetworks(context)
+    }
     Text("SCANNING LOCAL SUBNET...", color = color, fontFamily = FontFamily.Monospace)
     Spacer(modifier = Modifier.height(16.dp))
+    if (networks.isEmpty()) {
+        Text("[-] No networks found. Enable GPS + Location permission.", color = red, fontFamily = FontFamily.Monospace)
+    }
     LazyColumn {
         items(networks) { net ->
             Button(onClick = { onSelected(NetworkEngine.getGatewayIp(context) ?: "192.168.1.1", net.bssid) }, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {

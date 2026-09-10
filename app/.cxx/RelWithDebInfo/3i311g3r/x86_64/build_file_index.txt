@@ -1,1 +1,0 @@
-C:\Users\Anton\vanta_wifi_dos\app\src\main\cpp\CMakeLists.txt

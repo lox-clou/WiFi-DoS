@@ -1,6 +1,0 @@
-# ninja log v5
-1	4555	8107679657219890	CMakeFiles/twks_dos.dir/native-lib.cpp.o	c579ee7e4b70dd9b
-4557	5612	8107679668042115	C:/Users/Anton/vanta_wifi_dos/app/build/intermediates/cxx/RelWithDebInfo/3i311g3r/obj/arm64-v8a/libtwks_dos.so	3375beefe88f1e53
-0	9	0	clean	3412220e54da1f3b
-363	10434	8107683317237819	CMakeFiles/twks_dos.dir/native-lib.cpp.o	c579ee7e4b70dd9b
-10434	16016	8107683373930573	C:/Users/Anton/vanta_wifi_dos/app/build/intermediates/cxx/RelWithDebInfo/3i311g3r/obj/arm64-v8a/libtwks_dos.so	3375beefe88f1e53
