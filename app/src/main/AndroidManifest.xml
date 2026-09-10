@@ -5,8 +5,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <application android:label="VANTA_Terminal" android:theme="@style/Theme.VANTA" android:allowBackup="false">
-        <activity android:name=".MainActivity" android:exported="true">
+    <application android:label="TWKS WiFi" android:theme="@style/Theme.TWKS" android:allowBackup="false" android:icon="@android:drawable/ic_menu_manage">
+        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -1,3 +1,0 @@
-C:/Users/Anton/app/.cxx/Debug/612aj1r4/x86_64/CMakeFiles/vanta_dos.dir
-C:/Users/Anton/app/.cxx/Debug/612aj1r4/x86_64/CMakeFiles/edit_cache.dir
-C:/Users/Anton/app/.cxx/Debug/612aj1r4/x86_64/CMakeFiles/rebuild_cache.dir

