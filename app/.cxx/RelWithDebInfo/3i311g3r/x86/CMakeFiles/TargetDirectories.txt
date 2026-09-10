@@ -1,0 +1,3 @@
+C:/Users/Anton/vanta_wifi_dos/app/.cxx/RelWithDebInfo/3i311g3r/x86/CMakeFiles/twks_dos.dir
+C:/Users/Anton/vanta_wifi_dos/app/.cxx/RelWithDebInfo/3i311g3r/x86/CMakeFiles/edit_cache.dir
+C:/Users/Anton/vanta_wifi_dos/app/.cxx/RelWithDebInfo/3i311g3r/x86/CMakeFiles/rebuild_cache.dir

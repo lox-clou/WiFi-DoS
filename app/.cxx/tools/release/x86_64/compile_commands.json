@@ -1,0 +1,7 @@
+[
+{
+  "directory": "C:/Users/Anton/vanta_wifi_dos/app/.cxx/RelWithDebInfo/3i311g3r/x86_64",
+  "command": "C:\\Users\\Anton\\AppData\\Local\\Android\\Sdk\\ndk\\25.1.8937393\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe --target=x86_64-none-linux-android26 --sysroot=C:/Users/Anton/AppData/Local/Android/Sdk/ndk/25.1.8937393/toolchains/llvm/prebuilt/windows-x86_64/sysroot -Dtwks_dos_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -O3 -flto -O2 -g -DNDEBUG -fPIC -o CMakeFiles\\twks_dos.dir\\native-lib.cpp.o -c C:\\Users\\Anton\\vanta_wifi_dos\\app\\src\\main\\cpp\\native-lib.cpp",
+  "file": "C:\\Users\\Anton\\vanta_wifi_dos\\app\\src\\main\\cpp\\native-lib.cpp"
+}
+]
