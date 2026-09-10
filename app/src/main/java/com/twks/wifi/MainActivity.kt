@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,6 +41,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        FloodEngine.stopFlood()
+    }
 }
 
 @Composable
@@ -50,25 +57,32 @@ fun TerminalApp(context: ComponentActivity) {
     var packetCount by remember { mutableStateOf(0L) }
     var pps by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
-    var attackJob by remember { mutableStateOf<Job?>(null) }
 
     val green = Color(0xFF00FF41)
     val dimGreen = Color(0xFF008F24)
     val red = Color(0xFFFF003C)
+    val ctx = LocalContext.current
 
     LaunchedEffect(isAttacking) {
         if (isAttacking) {
-            var lastCount = NativeEngine.getPacketCount()
+            var lastCount = FloodEngine.getPacketCount()
             var lastTime = System.currentTimeMillis()
             while (isAttacking && currentCoroutineContext().isActive) {
                 delay(500)
-                val currentCount = NativeEngine.getPacketCount()
+                val currentCount = FloodEngine.getPacketCount()
                 val currentTime = System.currentTimeMillis()
                 val timeDiff = (currentTime - lastTime) / 1000.0
                 pps = if (timeDiff > 0) ((currentCount - lastCount) / timeDiff).toLong() else 0L
                 lastCount = currentCount
                 lastTime = currentTime
                 packetCount = currentCount
+                
+                if (packetCount == 0L && isAttacking) {
+                    // Если прошло 2 секунды, а пакетов 0 - что-то не так
+                    if (timeDiff > 2.0) {
+                        Toast.makeText(ctx, "Ошибка сети: проверьте подключение", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         } else {
             pps = 0
@@ -76,10 +90,7 @@ fun TerminalApp(context: ComponentActivity) {
     }
 
     DisposableEffect(Unit) {
-        onDispose {
-            attackJob?.cancel()
-            if (isAttacking) NativeEngine.stopAttack()
-        }
+        onDispose { FloodEngine.stopFlood() }
     }
 
     Surface(color = Color.Black, modifier = Modifier.fillMaxSize()) {
@@ -93,33 +104,32 @@ fun TerminalApp(context: ComponentActivity) {
                 "MENU" -> MenuScreen(green,
                     onSelectTarget = { screen = "TARGETS" },
                     onLaunchAttack = {
-                        if (!NetworkEngine.isConnectedToWifi(context)) {
-                            context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                        if (!NetworkEngine.isConnectedToWifi(ctx)) {
+                            Toast.makeText(ctx, "Подключитесь к Wi-Fi", Toast.LENGTH_SHORT).show()
+                            ctx.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
                         } else {
                             screen = "ATTACK"
                         }
                     }
                 )
-                "TARGETS" -> TargetListScreen(context, green, dimGreen, red, onSelected = { ip, _ ->
+                "TARGETS" -> TargetListScreen(ctx, green, dimGreen, red, onSelected = { ip, _ ->
                     targetIp = ip
                     screen = "MENU"
                 })
                 "ATTACK" -> AttackScreen(green, red, dimGreen, targetIp, isAttacking, packetCount, pps,
                     onStart = {
                         isAttacking = true
-                        attackJob = scope.launch(Dispatchers.IO) {
-                            NativeEngine.startAttack(targetIp, 64)
+                        scope.launch(Dispatchers.IO) {
+                            FloodEngine.startFlood(targetIp, 128) // 128 потоков корутин
                         }
                     },
                     onStop = {
                         isAttacking = false
-                        NativeEngine.stopAttack()
-                        attackJob?.cancel()
+                        FloodEngine.stopFlood()
                     },
                     onBack = {
                         isAttacking = false
-                        NativeEngine.stopAttack()
-                        attackJob?.cancel()
+                        FloodEngine.stopFlood()
                         screen = "MENU"
                     }
                 )

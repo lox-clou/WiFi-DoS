@@ -1,5 +1,0 @@
-cmake_minimum_required(VERSION 3.22.1)
-project("twks_dos")
-add_library(twks_dos SHARED native-lib.cpp)
-find_library(log-lib log)
-target_link_libraries(twks_dos ${log-lib})

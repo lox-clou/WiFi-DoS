@@ -1,3 +1,2 @@
--keep class com.twks.wifi.NativeEngine { *; }
--keepclassmembers class com.twks.wifi.NativeEngine { native <methods>; }
+-keep class com.twks.wifi.** { *; }
 -dontwarn sun.misc.Unsafe
