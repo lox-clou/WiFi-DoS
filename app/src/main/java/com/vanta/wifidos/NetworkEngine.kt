@@ -32,8 +32,16 @@ object NetworkEngine {
         val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         wm.startScan()
         val currentBssid = wm.connectionInfo.bssid
-        return wm.scanResults.map { 
+        return wm.scanResults?.map { 
             WifiNetwork(it.SSID ?: "Unknown", it.BSSID ?: "00:00:00:00:00:00", it.BSSID == currentBssid) 
-        }.filter { it.ssid.isNotEmpty() }
+        }?.filter { it.ssid.isNotEmpty() } ?: emptyList()
+    }
+
+    fun macToBytesSafe(mac: String): ByteArray? {
+        return try {
+            mac.split(":").map { it.toInt(16).toByte() }.toByteArray()
+        } catch (e: Exception) {
+            null
+        }
     }
 }
