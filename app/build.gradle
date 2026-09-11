@@ -9,12 +9,12 @@ android {
         applicationId "com.twks.wifi"
         minSdk 26
         targetSdk 34
-        versionCode 3
-        versionName "3.0.0-KOTLIN"
+        versionCode 5
+        versionName "4.1.1-signed"
     }
     signingConfigs {
         release {
-            storeFile file("../debug.keystore")
+            storeFile rootProject.file("debug.keystore")
             storePassword "android"
             keyAlias "androiddebugkey"
             keyPassword "android"
@@ -23,9 +23,8 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            minifyEnabled false
+            shrinkResources false
         }
     }
     compileOptions {
