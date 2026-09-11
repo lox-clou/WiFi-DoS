@@ -192,7 +192,8 @@ fun TerminalApp(context: ComponentActivity) {
                     onSiteDoS = { screen = "SITE_ATTACK" },
                     onBleSpam = { screen = "BLE_SPAM" },
                     onIpLogger = { screen = "IP_LOGGER" },
-                    onBooster = { screen = "BOOSTER" }
+                    onBooster = { screen = "BOOSTER" },
+                    onTgGifts = { screen = "TG_GIFTS" }
                 )
                 "WIFI_MENU" -> WiFiMenuScreen(
                     onSelectTarget = { screen = "WIFI_TARGETS" },
@@ -216,6 +217,7 @@ fun TerminalApp(context: ComponentActivity) {
                 "BLE_SPAM" -> BleSpamScreen(onBack = { screen = "MAIN_MENU" })
                 "IP_LOGGER" -> IpLoggerScreen(onBack = { screen = "MAIN_MENU" })
                 "BOOSTER" -> BoostScreen(onBack = { screen = "MAIN_MENU" })
+                "TG_GIFTS" -> TgGiftScreen(onBack = { screen = "MAIN_MENU" })
             }
         }
     }
@@ -233,7 +235,7 @@ fun MenuRow(num: String, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun MainMenuScreen(onWiFiDoS: () -> Unit, onCloneCard: () -> Unit, onSiteDoS: () -> Unit, onBleSpam: () -> Unit, onIpLogger: () -> Unit, onBooster: () -> Unit) {
+fun MainMenuScreen(onWiFiDoS: () -> Unit, onCloneCard: () -> Unit, onSiteDoS: () -> Unit, onBleSpam: () -> Unit, onIpLogger: () -> Unit, onBooster: () -> Unit, onTgGifts: () -> Unit) {
     val ctx = LocalContext.current
     var btOn by remember { mutableStateOf(false) }
     var wifiOn by remember { mutableStateOf(false) }
@@ -243,7 +245,7 @@ fun MainMenuScreen(onWiFiDoS: () -> Unit, onCloneCard: () -> Unit, onSiteDoS: ()
         wifiOn = NetworkEngine.isConnectedToWifi(ctx)
     }
     Column {
-        Text("┌─[ TWKS WIFI // v4.9.0 ]───────┐", color = Green, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text("─[ TWKS WIFI // v4.11.6 ]──────┐", color = Green, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Text("│ wifi · nfc · site · ble · ip  │", color = DimGreen, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Text("└───────────────────────────────┘", color = Green, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Spacer(modifier = Modifier.height(20.dp))
@@ -253,6 +255,7 @@ fun MainMenuScreen(onWiFiDoS: () -> Unit, onCloneCard: () -> Unit, onSiteDoS: ()
         MenuRow("04", "BLE SPAM", onBleSpam)
         MenuRow("05", "IP LOGGER", onIpLogger)
         MenuRow("06", "BOOSTER", onBooster)
+        MenuRow("07", "TG GIFTS", onTgGifts)
         Spacer(modifier = Modifier.weight(1f))
         Text("BT: ${if (btOn) "ON" else "OFF"} · WIFI: ${if (wifiOn) "ON" else "OFF"}", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
     }
@@ -780,6 +783,216 @@ fun BoostScreen(onBack: () -> Unit) {
             scope.launch { lines = Booster.restore() }
         }, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
             Text("[ RESTORE DEFAULTS ]", color = DimGreen, fontFamily = FontFamily.Monospace)
+        }
+    }
+}
+
+
+@Composable
+fun TgGiftScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    val prefs = ctx.getSharedPreferences("twks", 0)
+    var server by remember { mutableStateOf(prefs.getString("tg_server", "https://") ?: "https://") }
+    var apiId by remember { mutableStateOf(prefs.getString("tg_api_id", "") ?: "") }
+    var apiHash by remember { mutableStateOf(prefs.getString("tg_api_hash", "") ?: "") }
+    var phone by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("not connected") }
+    var configured by remember { mutableStateOf(false) }
+    var loggedIn by remember { mutableStateOf(false) }
+    var need2fa by remember { mutableStateOf(false) }
+    var codeHash by remember { mutableStateOf("") }
+    var lines by remember { mutableStateOf(listOf<String>()) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun api(path: String, body: String? = null): String {
+        return try {
+            val conn = java.net.URL("${server.trimEnd('/')}$path").openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 30000
+            if (body != null) {
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.outputStream.use { it.write(body.toByteArray()) }
+            }
+            val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
+            stream?.bufferedReader()?.readText() ?: "{}"
+        } catch (e: Exception) {
+            "{\"error\":\"${e.message?.take(120)}\"}"
+        }
+    }
+
+    Column {
+        TopBar("TG GIFT SCAN") { onBack() }
+        Text("STATUS: $status", color = Gold, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(value = server, onValueChange = { server = it },
+            label = { Text("Bridge URL (codespaces port 8787)", color = DimGreen, fontFamily = FontFamily.Monospace) },
+            colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Green, focusedBorderColor = Green, unfocusedBorderColor = DimGreen, cursorColor = Green),
+            modifier = Modifier.fillMaxWidth(), singleLine = true)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(onClick = {
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { api("/status") }
+                prefs.edit().putString("tg_server", server).apply()
+                val obj = org.json.JSONObject(r)
+                configured = obj.optBoolean("configured")
+                loggedIn = obj.optBoolean("logged_in")
+                status = when {
+                    obj.has("error") -> "bridge unreachable: ${obj.optString("error")}"
+                    loggedIn -> "logged in as ${obj.optString("me")}"
+                    configured -> "bridge ok, registration required"
+                    else -> "bridge ok, config required"
+                }
+            }
+        }, colors = ButtonDefaults.buttonColors(backgroundColor = DimGreen), modifier = Modifier.fillMaxWidth()) {
+            Text("[ CONNECT ]", color = Color.Black, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (!configured) {
+            OutlinedTextField(value = apiId, onValueChange = { apiId = it },
+                label = { Text("API ID (my.telegram.org)", color = DimGreen, fontFamily = FontFamily.Monospace) },
+                colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Green, focusedBorderColor = Green, unfocusedBorderColor = DimGreen, cursorColor = Green),
+                modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(value = apiHash, onValueChange = { apiHash = it },
+                label = { Text("API HASH", color = DimGreen, fontFamily = FontFamily.Monospace) },
+                colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Green, focusedBorderColor = Green, unfocusedBorderColor = DimGreen, cursorColor = Green),
+                modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
+                scope.launch {
+                    val body = org.json.JSONObject().put("api_id", apiId.toIntOrNull() ?: 0).put("api_hash", apiHash).toString()
+                    val r = withContext(Dispatchers.IO) { api("/config", body) }
+                    prefs.edit().putString("tg_api_id", apiId).putString("tg_api_hash", apiHash).apply()
+                    configured = !org.json.JSONObject(r).has("error")
+                    status = if (configured) "config saved, register below" else "config failed"
+                }
+            }, colors = ButtonDefaults.buttonColors(backgroundColor = DimGreen), modifier = Modifier.fillMaxWidth()) {
+                Text("[ SAVE CONFIG ]", color = Color.Black, fontFamily = FontFamily.Monospace)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        if (configured && !loggedIn) {
+            OutlinedTextField(value = phone, onValueChange = { phone = it },
+                label = { Text("PHONE +7...", color = DimGreen, fontFamily = FontFamily.Monospace) },
+                colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Green, focusedBorderColor = Green, unfocusedBorderColor = DimGreen, cursorColor = Green),
+                modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
+                scope.launch {
+                    val body = org.json.JSONObject().put("phone", phone).toString()
+                    val r = withContext(Dispatchers.IO) { api("/login/start", body) }
+                    val obj = org.json.JSONObject(r)
+                    codeHash = obj.optString("hash")
+                    status = if (codeHash.isNotEmpty()) "code sent to $phone" else "send code failed: ${obj.optString("detail", obj.optString("error"))}"
+                }
+            }, colors = ButtonDefaults.buttonColors(backgroundColor = DimGreen), modifier = Modifier.fillMaxWidth()) {
+                Text("[ SEND CODE ]", color = Color.Black, fontFamily = FontFamily.Monospace)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(value = code, onValueChange = { code = it },
+                label = { Text("CODE FROM TELEGRAM", color = DimGreen, fontFamily = FontFamily.Monospace) },
+                colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Green, focusedBorderColor = Green, unfocusedBorderColor = DimGreen, cursorColor = Green),
+                modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Spacer(modifier = Modifier.height(8.dp))
+            if (need2fa) {
+                OutlinedTextField(value = password, onValueChange = { password = it },
+                    label = { Text("2FA PASSWORD", color = DimGreen, fontFamily = FontFamily.Monospace) },
+                    colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Green, focusedBorderColor = Green, unfocusedBorderColor = DimGreen, cursorColor = Green),
+                    modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            Button(onClick = {
+                scope.launch {
+                    val body = if (need2fa) {
+                        org.json.JSONObject().put("phone", phone).put("hash", codeHash).put("password", password).toString()
+                    } else {
+                        org.json.JSONObject().put("phone", phone).put("code", code).put("hash", codeHash).toString()
+                    }
+                    val path = if (need2fa) "/login/2fa" else "/login/code"
+                    val r = withContext(Dispatchers.IO) { api(path, body) }
+                    val obj = org.json.JSONObject(r)
+                    if (obj.optBoolean("need_2fa")) {
+                        need2fa = true
+                        status = "2FA required, enter password"
+                    } else if (obj.optBoolean("ok")) {
+                        loggedIn = true
+                        status = "logged in as ${obj.optString("me")}"
+                    } else {
+                        status = "sign in failed: ${obj.optString("detail", obj.optString("error"))}"
+                    }
+                }
+            }, colors = ButtonDefaults.buttonColors(backgroundColor = Green), modifier = Modifier.fillMaxWidth()) {
+                Text("[ SIGN IN ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        if (loggedIn) {
+            OutlinedTextField(value = username, onValueChange = { username = it },
+                label = { Text("@username to scan", color = DimGreen, fontFamily = FontFamily.Monospace) },
+                colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Green, focusedBorderColor = Green, unfocusedBorderColor = DimGreen, cursorColor = Green),
+                modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    if (!busy && username.isNotBlank()) {
+                        busy = true
+                        lines = listOf("SCANNING...")
+                        scope.launch {
+                            val resp = withContext(Dispatchers.IO) { api("/gifts?username=${username.removePrefix("@")}") }
+                            lines = try {
+                                val obj = org.json.JSONObject(resp)
+                                val arr = obj.optJSONArray("gifts")
+                                val out = mutableListOf<String>()
+                                out.add("PROFILE: @${obj.optString("username")} · GIFTS: ${obj.optInt("count")}")
+                                val senders = mutableMapOf<String, Int>()
+                                var anon = 0
+                                if (arr != null) {
+                                    for (i2 in 0 until arr.length()) {
+                                        val g = arr.getJSONObject(i2)
+                                        val snd = g.optString("sender")
+                                        val msg = g.optString("message")
+                                        val date = g.optLong("date")
+                                        val d = if (date > 0) java.text.SimpleDateFormat("yy-MM-dd", java.util.Locale.US).format(java.util.Date(date * 1000)) else "?"
+                                        out.add("$d · $snd · ${if (msg.isEmpty()) "(no text)" else msg}")
+                                        if (snd == "anonymous" || snd == "hidden") anon++ else senders[snd] = (senders[snd] ?: 0) + 1
+                                    }
+                                }
+                                out.add("SENDERS: ${senders.size} named · $anon anonymous")
+                                senders.entries.sortedByDescending { it.value }.take(3).forEach { (k, v) ->
+                                    out.add("TOP: $k x$v")
+                                }
+                                out
+                            } catch (e: Exception) {
+                                listOf("RAW: ${resp.take(300)}")
+                            }
+                            busy = false
+                        }
+                    }
+                },
+                enabled = !busy && username.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(backgroundColor = if (busy) DimGreen else Green),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (busy) "[ SCANNING... ]" else "[ SCAN GIFTS ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(lines) { l ->
+                Text(l, color = if (l.startsWith("TOP") || l.startsWith("PROFILE")) Gold else DimGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            }
         }
     }
 }
