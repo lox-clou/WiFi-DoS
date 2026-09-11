@@ -1,6 +1,7 @@
 package com.twks.wifi
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -21,7 +22,6 @@ object Booster {
         }
     }
 
-    // запись через stdin su-шелла: переживает Magisk, KernelSU и суперюзер-варианты
     private fun suShell(cmd: String): String {
         return try {
             val p = Runtime.getRuntime().exec("su")
@@ -51,13 +51,27 @@ object Booster {
         }
     }
 
-    fun pingMs(host: String): Long {
+    private fun pingOnce(host: String): Long {
         val r = sh("ping -c 4 -W 2 $host")
         val m = Regex("=\\s*[\\d.]+/([\\d.]+)").find(r)
         return (m?.groupValues?.get(1)?.toFloatOrNull() ?: -1f).toLong()
     }
 
+    // три прогона: видим разброс, берем минимум
+    private fun pingTriple(host: String): Triple<Long, Long, Long> {
+        val a = pingOnce(host)
+        val b = pingOnce(host)
+        val c = pingOnce(host)
+        return Triple(a, b, c)
+    }
+
+    private fun minOf3(t: Triple<Long, Long, Long>): Long =
+        listOf(t.first, t.second, t.third).filter { it >= 0 }.minOrNull() ?: -1
+
     private fun readSys(path: String): String = try { File(path).readText().trim() } catch (e: Exception) { "" }
+
+    private fun sysctlKey(path: String): String =
+        path.removePrefix("/proc/sys/").replace('/', '.')
 
     private fun writeSys(path: String, value: String): Boolean {
         if (!File(path).exists()) return false
@@ -65,25 +79,40 @@ object Booster {
         if (before.isNotEmpty() && !saved.containsKey(path)) saved[path] = before
         suShell("echo '$value' > '$path'")
         if (readSys(path) != value) suRaw("echo $value > $path")
+        if (readSys(path) != value) suShell("sysctl -w ${sysctlKey(path)}=$value")
         return readSys(path) == value
+    }
+
+    private fun wifiPowerSaveOff(): String {
+        val bins = listOf("/system/bin/iw", "/vendor/bin/iw", "/system/xbin/iw", "iw")
+        for (b in bins) {
+            val r = suShell("$b dev wlan0 set power_save off")
+            if (!r.contains("inaccess") && !r.contains("not found") && !r.contains("No such")) {
+                return "$b -> ${if (r.isEmpty()) "sent" else r.take(30)}"
+            }
+        }
+        return "iw binary not reachable on this ROM"
     }
 
     suspend fun boost(gateway: String): BoostReport = withContext(Dispatchers.IO) {
         val lines = mutableListOf<String>()
         lines.add(if (rootOk()) "ROOT: uid=0 detected" else "ROOT: NOT GRANTED — writes will fail")
-        val before = pingMs(gateway)
-        lines.add("PING BEFORE: ${before}ms -> $gateway")
 
-        val psOut = suShell("iw dev wlan0 set power_save off")
-        val psNow = sh("iw dev wlan0 get power_save 2>/dev/null")
-        lines.add("WIFI POWERSAVE: ${if (psNow.contains("off")) "off (applied)" else if (psOut.isEmpty()) "cmd sent, verify unsupported" else "raw: ${psOut.take(40)}"}")
+        val bt = pingTriple(gateway)
+        val before = minOf3(bt)
+        lines.add("PING BEFORE: ${bt.first}/${bt.second}/${bt.third} ms · min $before")
+
+        suShell("mount -o remount,rw /proc/sys")
+        lines.add("PROC SYS: remount rw attempted")
+
+        lines.add("WIFI POWERSAVE: ${wifiPowerSaveOff()}")
 
         val avail = readSys("/proc/sys/net/ipv4/tcp_available_congestion_control")
         if (avail.contains("bbr")) {
             val cc = writeSys("/proc/sys/net/ipv4/tcp_congestion_control", "bbr")
             lines.add("TCP CC: bbr ${if (cc) "applied" else "write refused"}")
         } else {
-            lines.add("TCP CC: bbr not in kernel · available: $avail")
+            lines.add("TCP CC: bbr not in kernel · available: ${avail.ifEmpty { "unreadable" }}")
         }
 
         val params = listOf(
@@ -110,10 +139,12 @@ object Booster {
         val govOk = existing.count { writeSys(it, "performance") }
         lines.add("CPU GOVERNOR: $govOk/${existing.size} paths -> performance")
 
-        val after = pingMs(gateway)
+        delay(1500)
+        val at = pingTriple(gateway)
+        val after = minOf3(at)
         val delta = before - after
-        lines.add("PING AFTER: ${after}ms · delta ${delta}ms")
-        lines.add(if (delta > 2) "BOOST EFFECT: real, -$delta ms" else "BOOST EFFECT: within noise, tweaks stay active")
+        lines.add("PING AFTER: ${at.first}/${at.second}/${at.third} ms · min $after · delta $delta")
+        lines.add(if (delta > 2) "BOOST EFFECT: real, -$delta ms on min" else "BOOST EFFECT: within noise, tweaks stay active")
         BoostReport(lines, before, after)
     }
 
