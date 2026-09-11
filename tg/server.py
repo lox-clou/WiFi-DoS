@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
-from telethon.tl.functions.messages import GetUserGiftsRequest
+from telethon.tl import functions
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CFG = os.path.join(BASE, "config.json")
@@ -12,6 +12,36 @@ SESSION = os.path.join(BASE, "twks_session")
 
 app = FastAPI()
 client = None
+GIFT_REQ = None
+GIFT_METHODS = []
+
+def discover_gifts():
+    global GIFT_REQ, GIFT_METHODS
+    GIFT_METHODS = []
+    GIFT_REQ = None
+    for mod_name in ("messages", "payments", "stars", "users", "gifts"):
+        mod = getattr(functions, mod_name, None)
+        if mod is None:
+            continue
+        for name in dir(mod):
+            if name.endswith("Request") and "Gift" in name:
+                GIFT_METHODS.append(f"{mod_name}.{name}")
+                if GIFT_REQ is None and ("UserGifts" in name or "GetUserGifts" in name):
+                    GIFT_REQ = getattr(mod, name)
+    if GIFT_REQ is None:
+        for mod_name in ("messages", "payments"):
+            mod = getattr(functions, mod_name, None)
+            if mod is None:
+                continue
+            for name in dir(mod):
+                if name.endswith("Request") and "Gift" in name and name.startswith("Get"):
+                    GIFT_REQ = getattr(mod, name)
+                    break
+            if GIFT_REQ is not None:
+                break
+    return GIFT_REQ
+
+discover_gifts()
 
 def load_cfg():
     try:
@@ -60,7 +90,13 @@ async def status():
             me = m.username or m.phone
     except Exception:
         pass
-    return {"configured": bool(cfg.get("api_id")), "logged_in": logged, "me": me}
+    return {
+        "configured": bool(cfg.get("api_id")),
+        "logged_in": logged,
+        "me": me,
+        "gift_req": getattr(GIFT_REQ, "__name__", None),
+        "gift_methods": GIFT_METHODS[:20],
+    }
 
 @app.post("/config")
 async def config(c: Cfg):
@@ -101,17 +137,26 @@ async def gifts(username: str):
     c = await ensure_client()
     if not await c.is_user_authorized():
         raise HTTPException(401, "not logged in")
+    req = GIFT_REQ or discover_gifts()
+    if req is None:
+        raise HTTPException(501, f"telethon schema has no gifts request; found: {GIFT_METHODS}")
     username = username.lstrip("@")
     try:
         user = await c.get_entity(username)
     except Exception as e:
         raise HTTPException(404, f"user not found: {e}")
     try:
-        res = await c(GetUserGiftsRequest(user=user))
+        res = await c(req(user=user))
+    except TypeError:
+        try:
+            res = await c(req(user, 0, 0))
+        except Exception as e:
+            raise HTTPException(500, f"gifts call variant failed: {e}")
     except Exception as e:
-        raise HTTPException(500, f"getUserGifts failed: {e}")
+        raise HTTPException(500, f"gifts call failed: {e}")
+    gifts_list = getattr(res, "gifts", None) or getattr(res, "user_gifts", None) or []
     out = []
-    for g in res.gifts:
+    for g in gifts_list:
         sender = "anonymous"
         fid = getattr(g, "from_id", None)
         if fid is not None:
