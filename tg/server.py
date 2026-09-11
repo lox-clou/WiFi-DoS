@@ -26,7 +26,9 @@ def discover_gifts():
         for name in dir(mod):
             if name.endswith("Request") and "Gift" in name:
                 GIFT_METHODS.append(f"{mod_name}.{name}")
-                if GIFT_REQ is None and ("UserGifts" in name or "GetUserGifts" in name):
+                if "GetUserStarGifts" in name:
+                    GIFT_REQ = getattr(mod, name)
+                elif GIFT_REQ is None and ("UserGifts" in name or "GetUserGifts" in name):
                     GIFT_REQ = getattr(mod, name)
     if GIFT_REQ is None:
         for mod_name in ("messages", "payments"):
@@ -34,7 +36,7 @@ def discover_gifts():
             if mod is None:
                 continue
             for name in dir(mod):
-                if name.endswith("Request") and "Gift" in name and name.startswith("Get"):
+                if name.endswith("Request") and ("UserStarGifts" in name or "UserGifts" in name):
                     GIFT_REQ = getattr(mod, name)
                     break
             if GIFT_REQ is not None:
@@ -95,7 +97,7 @@ async def status():
         "logged_in": logged,
         "me": me,
         "gift_req": getattr(GIFT_REQ, "__name__", None),
-        "gift_methods": GIFT_METHODS[:20],
+        "gift_methods": GIFT_METHODS[:60],
     }
 
 @app.post("/config")
@@ -145,15 +147,21 @@ async def gifts(username: str):
         user = await c.get_entity(username)
     except Exception as e:
         raise HTTPException(404, f"user not found: {e}")
-    try:
-        res = await c(req(user=user))
-    except TypeError:
+    res = None
+    for kwargs in (
+        {"user": user, "offset": 0, "limit": 100, "hash": 0},
+        {"user": user, "offset": 0, "limit": 100},
+        {"user": user},
+    ):
         try:
-            res = await c(req(user, 0, 0))
+            res = await c(req(**kwargs))
+            break
+        except TypeError:
+            continue
         except Exception as e:
-            raise HTTPException(500, f"gifts call variant failed: {e}")
-    except Exception as e:
-        raise HTTPException(500, f"gifts call failed: {e}")
+            raise HTTPException(500, f"gifts call failed: {e}")
+    if res is None:
+        raise HTTPException(500, "no call signature matched for gifts request")
     gifts_list = getattr(res, "gifts", None) or getattr(res, "user_gifts", None) or []
     out = []
     for g in gifts_list:
