@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,7 +39,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Фикс отключения Wi-Fi, полностью защищенный от краша
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             if (cm != null) {
@@ -47,24 +47,17 @@ class MainActivity : ComponentActivity() {
                     .build()
                 cm.requestNetwork(request, object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
-                        try {
-                            cm.bindProcessToNetwork(network)
-                        } catch (e: Exception) {
-                            // прошивка против — работаем без привязки
-                        }
+                        try { cm.bindProcessToNetwork(network) } catch (e: Exception) {}
                     }
                 })
             }
-        } catch (e: Exception) {
-            // привязка недоступна — приложение продолжает работать
-        }
+        } catch (e: Exception) {}
 
         try {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                 locationPermissionRequest.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             }
-        } catch (e: Exception) {
-        }
+        } catch (e: Exception) {}
 
         setContent {
             MaterialTheme(colors = darkColors(background = Color.Black, primary = Color(0xFF00FF41), onBackground = Color(0xFF00FF41))) {
@@ -80,9 +73,33 @@ class MainActivity : ComponentActivity() {
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             cm?.bindProcessToNetwork(null)
-        } catch (e: Exception) {
-        }
+        } catch (e: Exception) {}
     }
+}
+
+val Green = Color(0xFF00FF41)
+val DimGreen = Color(0xFF008F24)
+val Red = Color(0xFFFF003C)
+val Gold = Color(0xFFFFD700)
+
+@Composable
+fun TopBar(title: String, onBack: (() -> Unit)? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        if (onBack != null) {
+            Text(
+                "←",
+                color = Green,
+                fontSize = 26.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { onBack() }.padding(end = 12.dp)
+            )
+        }
+        Text(title, color = Green, fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    Divider(color = DimGreen, thickness = 1.dp)
+    Spacer(modifier = Modifier.height(16.dp))
 }
 
 @Composable
@@ -108,8 +125,11 @@ fun TerminalApp(context: ComponentActivity) {
                     },
                     onBack = { screen = "MAIN_MENU" }
                 )
-                "WIFI_TARGETS" -> WiFiTargetListScreen(ctx, onSelected = { screen = "WIFI_MENU" }, onBack = { screen = "WIFI_MENU" })
-                "WIFI_ATTACK" -> WiFiAttackScreen(onBack = { screen = "MAIN_MENU" })
+                "WIFI_TARGETS" -> WiFiTargetListScreen(ctx,
+                    onSelected = { screen = "WIFI_MENU" },
+                    onBack = { screen = "WIFI_MENU" }
+                )
+                "WIFI_ATTACK" -> WiFiAttackScreen(onBack = { screen = "WIFI_MENU" })
                 "SITE_ATTACK" -> SiteAttackScreen(onBack = { screen = "MAIN_MENU" })
             }
         }
@@ -118,56 +138,41 @@ fun TerminalApp(context: ComponentActivity) {
 
 @Composable
 fun MainMenuScreen(onWiFiDoS: () -> Unit, onSiteDoS: () -> Unit) {
-    val green = Color(0xFF00FF41)
     Column {
-        Text("TWKS_WIFI // MAIN MENU", color = green, fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        Text("TWKS_WIFI // MAIN MENU", color = Green, fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(8.dp))
-        Divider(color = green.copy(alpha = 0.3f), thickness = 1.dp)
+        Divider(color = DimGreen, thickness = 1.dp)
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(onClick = onWiFiDoS, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            Text("[ 01 ] WiFi DoS", color = green, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Text("[ 01 ] WiFi DoS", color = Green, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
         }
         Button(onClick = onSiteDoS, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            Text("[ 02 ] Site DoS", color = green, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Text("[ 02 ] Site DoS", color = Green, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
         }
+        Spacer(modifier = Modifier.weight(1f))
+        Text("v4.2.0 // wifi: 192 thr burst // site: 128 thr x3 vectors", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
     }
 }
 
 @Composable
 fun WiFiMenuScreen(onSelectTarget: () -> Unit, onLaunchAttack: () -> Unit, onBack: () -> Unit) {
-    val green = Color(0xFF00FF41)
-    val dimGreen = Color(0xFF008F24)
-    val gold = Color(0xFFFFD700)
-
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("WiFi DoS", color = green, fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.weight(1f))
-            Text("[AUTO-SPOOF]", color = gold, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Divider(color = dimGreen, thickness = 1.dp)
+        TopBar("WiFi DoS") { onBack() }
+        Text("[AUTO-SPOOF] MAC rotate + random ports + payload mutate", color = Gold, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(onClick = onSelectTarget, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Text("[ 01 ] SELECT TARGET", color = green, fontSize = 18.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Text("[ 01 ] SELECT TARGET", color = Green, fontSize = 18.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
         }
         Button(onClick = onLaunchAttack, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Text("[ 02 ] LAUNCH ATTACK", color = green, fontSize = 18.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        Button(onClick = onBack, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
-            Text("[ < BACK ]", color = dimGreen, fontFamily = FontFamily.Monospace)
+            Text("[ 02 ] LAUNCH ATTACK", color = Green, fontSize = 18.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
 fun WiFiTargetListScreen(context: Context, onSelected: () -> Unit, onBack: () -> Unit) {
-    val green = Color(0xFF00FF41)
-    val dimGreen = Color(0xFF008F24)
-    val red = Color(0xFFFF003C)
     var networks by remember { mutableStateOf<List<WifiNetwork>>(emptyList()) }
 
     LaunchedEffect(Unit) {
@@ -175,38 +180,27 @@ fun WiFiTargetListScreen(context: Context, onSelected: () -> Unit, onBack: () ->
     }
 
     Column {
-        Text("SELECT TARGET", color = green, fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(8.dp))
-        Divider(color = dimGreen, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("SCANNING...", color = green, fontFamily = FontFamily.Monospace)
+        TopBar("SELECT TARGET") { onBack() }
+        Text("SCANNING...", color = Green, fontFamily = FontFamily.Monospace)
         Spacer(modifier = Modifier.height(16.dp))
 
         if (networks.isEmpty()) {
-            Text("[-] No networks found.", color = red, fontFamily = FontFamily.Monospace)
+            Text("[-] No networks found.", color = Red, fontFamily = FontFamily.Monospace)
         }
 
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(networks) { net ->
                 Button(onClick = onSelected, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
-                    Text(">> ${net.ssid} [${net.bssid}]", color = if (net.isConnected) green else dimGreen, fontFamily = FontFamily.Monospace)
+                    Text(">> ${net.ssid} [${net.bssid}]", color = if (net.isConnected) Green else DimGreen, fontFamily = FontFamily.Monospace)
                 }
             }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = onBack, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
-            Text("[ < BACK ]", color = dimGreen, fontFamily = FontFamily.Monospace)
         }
     }
 }
 
 @Composable
 fun WiFiAttackScreen(onBack: () -> Unit) {
-    val green = Color(0xFF00FF41)
-    val dimGreen = Color(0xFF008F24)
-    val red = Color(0xFFFF003C)
     val ctx = LocalContext.current
-
     var isAttacking by remember { mutableStateOf(false) }
     var packetCount by remember { mutableStateOf(0L) }
     var pps by remember { mutableStateOf(0L) }
@@ -233,56 +227,46 @@ fun WiFiAttackScreen(onBack: () -> Unit) {
     }
 
     Column {
-        Text("WiFi DoS ATTACK", color = green, fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(8.dp))
-        Divider(color = dimGreen, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(16.dp))
+        TopBar("WiFi ATTACK") {
+            isAttacking = false
+            FloodEngine.stopFlood()
+            onBack()
+        }
 
-        Text("TARGET: $gatewayIp", color = green, fontFamily = FontFamily.Monospace)
+        Text("TARGET: $gatewayIp", color = Green, fontFamily = FontFamily.Monospace)
+        Text("VECTOR: UDP burst x3 // 192 threads", color = DimGreen, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Spacer(modifier = Modifier.height(16.dp))
-        Text("TOTAL PACKETS: $packetCount", color = dimGreen, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
-        Text("THROUGHPUT: $pps PPS", color = if (isAttacking) red else dimGreen, fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text("TOTAL PACKETS: $packetCount", color = DimGreen, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+        Text("THROUGHPUT: $pps PPS", color = if (isAttacking) Red else DimGreen, fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         Spacer(modifier = Modifier.weight(1f))
 
         if (isAttacking) {
             Button(onClick = {
                 isAttacking = false
                 FloodEngine.stopFlood()
-            }, colors = ButtonDefaults.buttonColors(backgroundColor = red), modifier = Modifier.fillMaxWidth()) {
+            }, colors = ButtonDefaults.buttonColors(backgroundColor = Red), modifier = Modifier.fillMaxWidth()) {
                 Text("[ ABORT ATTACK ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
             }
         } else {
             Button(onClick = {
                 isAttacking = true
                 scope.launch(Dispatchers.IO) {
-                    FloodEngine.startFlood(gatewayIp, 128)
+                    FloodEngine.startFlood(gatewayIp, 192)
                 }
-            }, colors = ButtonDefaults.buttonColors(backgroundColor = green), modifier = Modifier.fillMaxWidth()) {
+            }, colors = ButtonDefaults.buttonColors(backgroundColor = Green), modifier = Modifier.fillMaxWidth()) {
                 Text("[ EXECUTE FLOOD ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
             }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = {
-            isAttacking = false
-            FloodEngine.stopFlood()
-            onBack()
-        }, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
-            Text("[ < BACK ]", color = dimGreen, fontFamily = FontFamily.Monospace)
         }
     }
 }
 
 @Composable
 fun SiteAttackScreen(onBack: () -> Unit) {
-    val green = Color(0xFF00FF41)
-    val dimGreen = Color(0xFF008F24)
-    val red = Color(0xFFFF003C)
-    val gold = Color(0xFFFFD700)
-
     var targetUrl by remember { mutableStateOf("") }
     var isAttacking by remember { mutableStateOf(false) }
     var requestCount by remember { mutableStateOf(0L) }
     var rps by remember { mutableStateOf(0L) }
+    var mode by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(isAttacking) {
@@ -305,44 +289,52 @@ fun SiteAttackScreen(onBack: () -> Unit) {
     }
 
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Site DoS ATTACK", color = green, fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.weight(1f))
-            Text("[STEALTH]", color = gold, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        TopBar("Site ATTACK") {
+            isAttacking = false
+            SiteFloodEngine.stopFlood()
+            onBack()
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Divider(color = dimGreen, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(16.dp))
 
         if (!isAttacking) {
             OutlinedTextField(
                 value = targetUrl,
                 onValueChange = { targetUrl = it },
-                label = { Text("Enter URL (e.g., google.com)", color = dimGreen, fontFamily = FontFamily.Monospace) },
+                label = { Text("Enter URL (e.g., google.com)", color = DimGreen, fontFamily = FontFamily.Monospace) },
                 colors = TextFieldDefaults.outlinedTextFieldColors(
-                    textColor = green,
-                    focusedBorderColor = green,
-                    unfocusedBorderColor = dimGreen,
-                    cursorColor = green
+                    textColor = Green,
+                    focusedBorderColor = Green,
+                    unfocusedBorderColor = DimGreen,
+                    cursorColor = Green
                 ),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text("VECTOR:", color = DimGreen, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                VectorChip("GET FLOOD", mode == 0) { mode = 0 }
+                VectorChip("HEAD FLOOD", mode == 1) { mode = 1 }
+                VectorChip("SLOW HOLD", mode == 2) { mode = 2 }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
         } else {
-            Text("TARGET: $targetUrl", color = green, fontFamily = FontFamily.Monospace)
-            Spacer(modifier = Modifier.height(16.dp))
+            Text("TARGET: $targetUrl", color = Green, fontFamily = FontFamily.Monospace)
+            Text("VECTOR: ${listOf("GET FLOOD", "HEAD FLOOD", "SLOW HOLD")[mode]} // 128 threads", color = DimGreen, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        Text("TOTAL REQUESTS: $requestCount", color = dimGreen, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
-        Text("THROUGHPUT: $rps RPS", color = if (isAttacking) red else dimGreen, fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text("BYPASS: UA rotate · header spoof · cache-bust · jitter", color = Gold, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Spacer(modifier = Modifier.height(12.dp))
+        Text("TOTAL REQUESTS: $requestCount", color = DimGreen, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+        Text("THROUGHPUT: $rps RPS", color = if (isAttacking) Red else DimGreen, fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         Spacer(modifier = Modifier.weight(1f))
 
         if (isAttacking) {
             Button(onClick = {
                 isAttacking = false
                 SiteFloodEngine.stopFlood()
-            }, colors = ButtonDefaults.buttonColors(backgroundColor = red), modifier = Modifier.fillMaxWidth()) {
+            }, colors = ButtonDefaults.buttonColors(backgroundColor = Red), modifier = Modifier.fillMaxWidth()) {
                 Text("[ ABORT ATTACK ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
             }
         } else {
@@ -351,24 +343,33 @@ fun SiteAttackScreen(onBack: () -> Unit) {
                     if (targetUrl.isNotEmpty()) {
                         isAttacking = true
                         scope.launch(Dispatchers.IO) {
-                            SiteFloodEngine.startFlood(targetUrl, 64)
+                            SiteFloodEngine.startFlood(targetUrl, 128, mode)
                         }
                     }
                 },
                 enabled = targetUrl.isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(backgroundColor = if (targetUrl.isNotEmpty()) green else dimGreen),
+                colors = ButtonDefaults.buttonColors(backgroundColor = if (targetUrl.isNotEmpty()) Green else DimGreen),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("[ EXECUTE FLOOD ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
             }
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = {
-            isAttacking = false
-            SiteFloodEngine.stopFlood()
-            onBack()
-        }, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
-            Text("[ < BACK ]", color = dimGreen, fontFamily = FontFamily.Monospace)
-        }
+    }
+}
+
+@Composable
+fun VectorChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Text(
+            "[ $label ]",
+            color = if (selected) Gold else DimGreen,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }

