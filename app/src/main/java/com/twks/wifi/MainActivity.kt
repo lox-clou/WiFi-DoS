@@ -191,7 +191,8 @@ fun TerminalApp(context: ComponentActivity) {
                     onCloneCard = { screen = "CLONE_CARD" },
                     onSiteDoS = { screen = "SITE_ATTACK" },
                     onBleSpam = { screen = "BLE_SPAM" },
-                    onIpLogger = { screen = "IP_LOGGER" }
+                    onIpLogger = { screen = "IP_LOGGER" },
+                    onBooster = { screen = "BOOSTER" }
                 )
                 "WIFI_MENU" -> WiFiMenuScreen(
                     onSelectTarget = { screen = "WIFI_TARGETS" },
@@ -214,6 +215,7 @@ fun TerminalApp(context: ComponentActivity) {
                 "APDU_LOG" -> ApduLogScreen(onBack = { screen = "CLONE_CARD" })
                 "BLE_SPAM" -> BleSpamScreen(onBack = { screen = "MAIN_MENU" })
                 "IP_LOGGER" -> IpLoggerScreen(onBack = { screen = "MAIN_MENU" })
+                "BOOSTER" -> BoostScreen(onBack = { screen = "MAIN_MENU" })
             }
         }
     }
@@ -231,7 +233,7 @@ fun MenuRow(num: String, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun MainMenuScreen(onWiFiDoS: () -> Unit, onCloneCard: () -> Unit, onSiteDoS: () -> Unit, onBleSpam: () -> Unit, onIpLogger: () -> Unit) {
+fun MainMenuScreen(onWiFiDoS: () -> Unit, onCloneCard: () -> Unit, onSiteDoS: () -> Unit, onBleSpam: () -> Unit, onIpLogger: () -> Unit, onBooster: () -> Unit) {
     val ctx = LocalContext.current
     var btOn by remember { mutableStateOf(false) }
     var wifiOn by remember { mutableStateOf(false) }
@@ -250,6 +252,7 @@ fun MainMenuScreen(onWiFiDoS: () -> Unit, onCloneCard: () -> Unit, onSiteDoS: ()
         MenuRow("03", "SITE DOS", onSiteDoS)
         MenuRow("04", "BLE SPAM", onBleSpam)
         MenuRow("05", "IP LOGGER", onIpLogger)
+        MenuRow("06", "BOOSTER", onBooster)
         Spacer(modifier = Modifier.weight(1f))
         Text("BT: ${if (btOn) "ON" else "OFF"} · WIFI: ${if (wifiOn) "ON" else "OFF"}", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
     }
@@ -728,6 +731,55 @@ fun IpLoggerScreen(onBack: () -> Unit) {
             items(logs) { e ->
                 Text("${e.date} | ${e.ip} | ${e.ua.take(38)} | ref:${e.referer.take(18)}", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             }
+        }
+    }
+}
+
+
+@Composable
+fun BoostScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    var lines by remember { mutableStateOf(listOf<String>()) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Column {
+        TopBar("BOOSTER") { onBack() }
+        Text("Root tweaks: wifi powersave off, BBR, tcp stack, cpu performance.", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Text("Ping measured before and after, effect shown in ms.", color = DimGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(lines) { l ->
+                Text(l, color = Green, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = {
+                if (!busy) {
+                    busy = true
+                    lines = listOf("MEASURING...")
+                    scope.launch {
+                        val gw = NetworkEngine.getGatewayIp(ctx) ?: "1.1.1.1"
+                        val r = Booster.boost(gw)
+                        lines = r.lines
+                        busy = false
+                    }
+                }
+            },
+            enabled = !busy,
+            colors = ButtonDefaults.buttonColors(backgroundColor = if (busy) DimGreen else Green),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (busy) "[ BOOSTING... ]" else "[ RUN BOOST ]", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = {
+            scope.launch { lines = Booster.restore() }
+        }, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent), modifier = Modifier.fillMaxWidth()) {
+            Text("[ RESTORE DEFAULTS ]", color = DimGreen, fontFamily = FontFamily.Monospace)
         }
     }
 }
