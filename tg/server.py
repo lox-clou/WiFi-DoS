@@ -26,9 +26,9 @@ def discover_gifts():
         for name in dir(mod):
             if name.endswith("Request") and "Gift" in name:
                 GIFT_METHODS.append(f"{mod_name}.{name}")
-                if "GetUserStarGifts" in name:
+                if name == "GetSavedStarGiftsRequest":
                     GIFT_REQ = getattr(mod, name)
-                elif GIFT_REQ is None and ("UserGifts" in name or "GetUserGifts" in name):
+                elif GIFT_REQ is None and ("GetUserStarGifts" in name or "UserGifts" in name):
                     GIFT_REQ = getattr(mod, name)
     if GIFT_REQ is None:
         for mod_name in ("messages", "payments"):
@@ -36,7 +36,7 @@ def discover_gifts():
             if mod is None:
                 continue
             for name in dir(mod):
-                if name.endswith("Request") and ("UserStarGifts" in name or "UserGifts" in name):
+                if name.endswith("Request") and ("UserStarGifts" in name or "UserGifts" in name or name == "GetSavedStarGiftsRequest"):
                     GIFT_REQ = getattr(mod, name)
                     break
             if GIFT_REQ is not None:
